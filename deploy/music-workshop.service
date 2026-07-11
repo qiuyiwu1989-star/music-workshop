@@ -1,0 +1,18 @@
+[Unit]
+Description=音乐工坊 Music Workshop (serve.mjs：静态 dist + /api/plan /api/compose)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/music-workshop
+# serve.mjs 自身读 backend/.env（含 MIMO 密钥），监听 127.0.0.1:8080
+ExecStart=/usr/bin/node backend/serve.mjs
+Restart=always
+RestartSec=3
+# 按需改成低权限用户；.env 权限 600 归该用户
+User=www-data
+Group=www-data
+Environment=NODE_ENV=production
+
+[Install]
+WantedBy=multi-user.target
