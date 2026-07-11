@@ -56,54 +56,65 @@
   }
   function clearLit() { _litEls.forEach(el => el.classList.remove('active', 'gf-lit')); _litEls.clear(); }
 
-  // ---- 用所选乐器播放一段音符（声音 + 左侧键盘动效同步）----
-  function stopPlay() {
-    state.playTimers.forEach(clearTimeout); state.playTimers = [];
-    clearLit();
-    // 释放此刻正在发声的音，避免长音停不下来
-    if (typeof AudioEngine !== 'undefined') state.sounding.forEach(p => { try { AudioEngine.release(p); } catch (e) {} });
-    state.sounding.clear();
-    state.playing = false;
-    if (state.playBtn) { state.playBtn.textContent = '▶ 再听一次'; state.playBtn = null; }
+  // ---- 播放：支持 播放 / 暂停 / 继续（记住播到哪一拍）----
+  const _play = { state: 'stopped', notes: null, bpm: 120, instId: null, btn: null, offsetMs: 0, startWall: 0, endTimer: null };
+  function _clearTimers() { state.playTimers.forEach(clearTimeout); state.playTimers = []; if (_play.endTimer) { clearTimeout(_play.endTimer); _play.endTimer = null; } }
+  function _releaseSounding() { if (typeof AudioEngine !== 'undefined') state.sounding.forEach(p => { try { AudioEngine.release(p); } catch (e) {} }); state.sounding.clear(); }
+  function _setBtn(label) { if (_play.btn) _play.btn.textContent = label; }
+
+  function stopPlay() {                       // 彻底停止并回到开头
+    _clearTimers(); clearLit(); _releaseSounding();
+    _play.state = 'stopped'; _play.offsetMs = 0;
+    _setBtn('▶ 再听一次'); _play.btn = null; _play.notes = null;
+  }
+
+  function _scheduleFrom(fromMs) {            // 从 fromMs(毫秒) 起排程剩余音符
+    const inst = instOf(_play.instId); if (!inst) return;
+    const spb = 60 / (_play.bpm || 90);
+    _play.startWall = Date.now(); _play.offsetMs = fromMs;
+    let endMs = 0;
+    _play.notes.forEach(n => {
+      const onMs = n.start * spb * 1000, offMs = (n.start + n.duration) * spb * 1000;
+      if (offMs > endMs) endMs = offMs;
+      if (offMs <= fromMs) return;                          // 已放完，跳过
+      const onDelay = Math.max(0, onMs - fromMs);           // 跨越暂停点的音立即续上
+      state.playTimers.push(setTimeout(() => { try { AudioEngine[inst.play](n.pitch); } catch (e) {} state.sounding.add(n.pitch); lightKey(n.pitch, true); }, onDelay));
+      if (inst.type !== 'drums') {
+        state.playTimers.push(setTimeout(() => { try { AudioEngine.release(n.pitch); } catch (e) {} state.sounding.delete(n.pitch); lightKey(n.pitch, false); }, offMs - fromMs));
+      } else {
+        state.playTimers.push(setTimeout(() => lightKey(n.pitch, false), onDelay + 120));
+      }
+    });
+    _play.endTimer = setTimeout(stopPlay, Math.max(0, endMs - fromMs) + 200);   // 播完自动复位
+  }
+
+  function playMelody(notes, bpm, instId, btn) {   // 从头播放（新曲）
+    _clearTimers(); clearLit(); _releaseSounding();
+    if (_play.btn && _play.btn !== btn) _play.btn.textContent = '▶ 再听一次';   // 复位上一个按钮
+    const inst = instOf(instId); if (!inst || typeof AudioEngine === 'undefined') return;
+    try { AudioEngine.init(); } catch (e) {}
+    _play.notes = notes; _play.bpm = bpm; _play.instId = instId; _play.btn = btn || null;
+    _play.state = 'playing'; _setBtn('⏸ 暂停');
+    _scheduleFrom(0);
+  }
+  function pausePlay() {
+    _play.offsetMs = Date.now() - _play.startWall + _play.offsetMs;   // 记住播到哪
+    _clearTimers(); _releaseSounding(); clearLit();
+    _play.state = 'paused'; _setBtn('▶ 继续');
+  }
+  function resumePlay() {
+    try { AudioEngine.init(); } catch (e) {}
+    _play.state = 'playing'; _setBtn('⏸ 暂停');
+    _scheduleFrom(_play.offsetMs);                                   // 从暂停处续播
   }
   function makePlayBtn(notes, bpm, instId) {
     const b = document.createElement('button'); b.className = 'aic-btn'; b.textContent = '▶ 播放';
-    b.onclick = () => { (state.playing && state.playBtn === b) ? stopPlay() : playMelody(notes, bpm, instId, b); };
+    b.onclick = () => {
+      if (_play.btn === b && _play.state === 'playing') pausePlay();
+      else if (_play.btn === b && _play.state === 'paused') resumePlay();
+      else playMelody(notes, bpm, instId, b);
+    };
     return b;
-  }
-  function playMelody(notes, bpm, instId, btn) {
-    stopPlay();
-    const inst = instOf(instId); if (!inst || typeof AudioEngine === 'undefined') return;
-    try { AudioEngine.init(); } catch (e) {}
-    state.playing = true;
-    state.playBtn = btn || null;
-    if (btn) btn.textContent = '⏹ 停止';
-    const spb = 60 / (bpm || 90);
-    let endMs = 0;
-    notes.forEach(n => {
-      const onMs = n.start * spb * 1000;
-      const offMs = (n.start + n.duration) * spb * 1000;
-      if (offMs > endMs) endMs = offMs;
-      state.playTimers.push(setTimeout(() => {
-        try { AudioEngine[inst.play](n.pitch); } catch (e) {}
-        state.sounding.add(n.pitch);
-        lightKey(n.pitch, true);                        // 按下：亮
-      }, onMs));
-      if (inst.type !== 'drums') {
-        state.playTimers.push(setTimeout(() => {
-          try { AudioEngine.release(n.pitch); } catch (e) {}
-          state.sounding.delete(n.pitch);
-          lightKey(n.pitch, false);                     // 抬起：灭
-        }, offMs));
-      } else {
-        state.playTimers.push(setTimeout(() => lightKey(n.pitch, false), onMs + 120));
-      }
-    });
-    // 播完自动复位按钮
-    state.playTimers.push(setTimeout(() => {
-      state.playing = false; state.sounding.clear();
-      if (state.playBtn) { state.playBtn.textContent = '▶ 再听一次'; state.playBtn = null; }
-    }, endMs + 160));
   }
 
   // ---- 存进作曲台（Medly）：新建一个 track，孩子接手编辑 ----
