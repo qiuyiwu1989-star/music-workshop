@@ -9,7 +9,7 @@
 (function () {
   'use strict';
 
-  const state = { history: [], last: null, playTimers: [], open: false };
+  const state = { history: [], last: null, playTimers: [], open: false, playing: false, playBtn: null, sounding: new Set() };
 
   function instOf(id) {
     return (typeof INSTRUMENTS !== 'undefined' && INSTRUMENTS.find(i => i.id === id)) || null;
@@ -57,28 +57,53 @@
   function clearLit() { _litEls.forEach(el => el.classList.remove('active', 'gf-lit')); _litEls.clear(); }
 
   // ---- 用所选乐器播放一段音符（声音 + 左侧键盘动效同步）----
-  function stopPlay() { state.playTimers.forEach(clearTimeout); state.playTimers = []; clearLit(); }
-  function playMelody(notes, bpm, instId) {
+  function stopPlay() {
+    state.playTimers.forEach(clearTimeout); state.playTimers = [];
+    clearLit();
+    // 释放此刻正在发声的音，避免长音停不下来
+    if (typeof AudioEngine !== 'undefined') state.sounding.forEach(p => { try { AudioEngine.release(p); } catch (e) {} });
+    state.sounding.clear();
+    state.playing = false;
+    if (state.playBtn) { state.playBtn.textContent = '▶ 再听一次'; state.playBtn = null; }
+  }
+  function makePlayBtn(notes, bpm, instId) {
+    const b = document.createElement('button'); b.className = 'aic-btn'; b.textContent = '▶ 播放';
+    b.onclick = () => { (state.playing && state.playBtn === b) ? stopPlay() : playMelody(notes, bpm, instId, b); };
+    return b;
+  }
+  function playMelody(notes, bpm, instId, btn) {
     stopPlay();
     const inst = instOf(instId); if (!inst || typeof AudioEngine === 'undefined') return;
     try { AudioEngine.init(); } catch (e) {}
+    state.playing = true;
+    state.playBtn = btn || null;
+    if (btn) btn.textContent = '⏹ 停止';
     const spb = 60 / (bpm || 90);
+    let endMs = 0;
     notes.forEach(n => {
       const onMs = n.start * spb * 1000;
       const offMs = (n.start + n.duration) * spb * 1000;
+      if (offMs > endMs) endMs = offMs;
       state.playTimers.push(setTimeout(() => {
         try { AudioEngine[inst.play](n.pitch); } catch (e) {}
+        state.sounding.add(n.pitch);
         lightKey(n.pitch, true);                        // 按下：亮
       }, onMs));
       if (inst.type !== 'drums') {
         state.playTimers.push(setTimeout(() => {
           try { AudioEngine.release(n.pitch); } catch (e) {}
+          state.sounding.delete(n.pitch);
           lightKey(n.pitch, false);                     // 抬起：灭
         }, offMs));
       } else {
         state.playTimers.push(setTimeout(() => lightKey(n.pitch, false), onMs + 120));
       }
     });
+    // 播完自动复位按钮
+    state.playTimers.push(setTimeout(() => {
+      state.playing = false; state.sounding.clear();
+      if (state.playBtn) { state.playBtn.textContent = '▶ 再听一次'; state.playBtn = null; }
+    }, endMs + 160));
   }
 
   // ---- 存进作曲台（Medly）：新建一个 track，孩子接手编辑 ----
@@ -161,10 +186,11 @@
       const meta = document.createElement('div'); meta.className = 'aic-meta';
       meta.textContent = `${instName} · ${data.scale} · ${data.bpm}BPM · ${data.notes.length}个音`;
       const row = document.createElement('div'); row.className = 'aic-actions';
-      row.appendChild(btn('▶ 再听一次', () => playMelody(data.notes, data.bpm, instId)));
+      const playB = makePlayBtn(data.notes, data.bpm, instId);
+      row.appendChild(playB);
       row.appendChild(btn('🎹 存进作曲台 · 我来改', () => saveToMedly(data, instId)));
       outEl.append(who, meta, row);
-      playMelody(data.notes, data.bpm, instId);
+      playMelody(data.notes, data.bpm, instId, playB);   // 自动试听，按钮显示“⏹ 停止”
     } catch (e) { outEl.textContent = '网络出错了：' + e.message; }
   }
 
