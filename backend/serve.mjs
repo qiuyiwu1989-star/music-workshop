@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.join(HERE, 'dist');
-const PORT = 8080;
+const PORT = Number(process.env.PORT) || 8080;   // 生产可用 PORT 环境变量指定端口
 
 // ---- 读 .env（仅服务器侧持有密钥）----
 const ENV = {};
