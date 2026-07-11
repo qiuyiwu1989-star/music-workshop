@@ -24,5 +24,6 @@ sleep 1
 sudo systemctl --no-pager --lines=5 status music-workshop || true
 
 echo "▶ 自检"
-curl -s -o /dev/null -w "  本地 8080 → %{http_code}\n" http://127.0.0.1:8080/ || true
-echo "✅ 完成"
+PORT="$(cat "$APP_DIR/.port" 2>/dev/null || echo 8080)"
+curl -s -o /dev/null -w "  本地 $PORT → %{http_code}\n" "http://127.0.0.1:$PORT/" || true
+echo "✅ 完成（外网：https://music.yongle.school）"
