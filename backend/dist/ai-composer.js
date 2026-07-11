@@ -27,8 +27,26 @@
     return document.querySelector(`.key-white[data-semi="${semi}"], .key-black[data-semi="${semi}"]`);
   }
   function lightKey(pitch, on) {
-    const el = keyElOf(pitch);
-    if (!el) return;                                    // 音在当前可见键盘之外则跳过（声音照常）
+    const ci = (typeof currentInstrument !== 'undefined' && currentInstrument) ? currentInstrument.controller : null;
+    if (ci === 'guitar') {                              // 真吉他：起音时对应的弦闪一下
+      if (!on) return;
+      const hit = document.querySelector(`#gf-guitar .ghit[data-midi="${pitch}"]`);
+      if (hit) {
+        const s = document.getElementById('gs' + hit.dataset.str);
+        if (s) { s.classList.add('gs-lit'); setTimeout(() => s.classList.remove('gs-lit'), 220); }
+        try { if (typeof burstParticles === 'function') burstParticles(hit, 8); } catch (e) {}
+      }
+      return;
+    }
+    if (ci === 'bowed') {                               // 提琴指板：按住时对应格持续亮
+      const cell = document.querySelector(`#gf-board .gf-cell[data-midi="${pitch}"]`);
+      if (!cell) return;
+      if (on) { cell.classList.add('gf-lit'); _litEls.add(cell); }
+      else { cell.classList.remove('gf-lit'); _litEls.delete(cell); }
+      return;
+    }
+    const el = keyElOf(pitch);                          // 钢琴键（默认）
+    if (!el) return;
     if (on) {
       el.classList.add('active'); _litEls.add(el);
       try { if (typeof burstParticles === 'function') burstParticles(el, 8); } catch (e) {}
@@ -36,7 +54,7 @@
       el.classList.remove('active'); _litEls.delete(el);
     }
   }
-  function clearLit() { _litEls.forEach(el => el.classList.remove('active')); _litEls.clear(); }
+  function clearLit() { _litEls.forEach(el => el.classList.remove('active', 'gf-lit')); _litEls.clear(); }
 
   // ---- 用所选乐器播放一段音符（声音 + 左侧键盘动效同步）----
   function stopPlay() { state.playTimers.forEach(clearTimeout); state.playTimers = []; clearLit(); }
