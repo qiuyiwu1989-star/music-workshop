@@ -217,7 +217,10 @@
       display:none;flex-direction:column;background:rgba(24,22,38,.97);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);
       border-radius:16px;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.5);color:#eee;font-size:14px}
     #aic-panel.open{display:flex}
-    .aic-head{padding:12px 14px;background:linear-gradient(135deg,rgba(120,115,245,.35),rgba(255,110,196,.25));font-weight:700}
+    #aic-panel.big{width:min(760px,94vw);height:min(88vh,940px);max-height:88vh}
+    .aic-head{position:relative;padding:12px 44px 12px 14px;background:linear-gradient(135deg,rgba(120,115,245,.35),rgba(255,110,196,.25));font-weight:700}
+    .aic-max{position:absolute;top:10px;right:12px;width:26px;height:26px;border:none;border-radius:7px;background:rgba(255,255,255,.14);color:#fff;font-size:14px;line-height:1;cursor:pointer}
+    .aic-max:hover{background:rgba(255,255,255,.28)}
     .aic-head small{display:block;font-weight:400;opacity:.8;font-size:12px;margin-top:2px}
     .aic-inst-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;opacity:.9;border-bottom:1px solid rgba(255,255,255,.08)}
     .aic-inst-row select{flex:1;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:5px 8px;font-size:13px;font-family:inherit}
@@ -241,7 +244,7 @@
     const panel = document.createElement('div');
     panel.id = 'aic-panel';
     panel.innerHTML = `
-      <div class="aic-head">🎼 AI 共创 · 说出你想表达的
+      <div class="aic-head"><button id="aic-max" class="aic-max" title="放大 / 还原">⤢</button>🎼 AI 共创 · 说出你想表达的
         <small>你是作者，我只帮你起草。听完可以让我改，满意就放进作曲台署上你的名字。</small></div>
       <div class="aic-inst-row">🎹 用这个乐器弹 <select id="aic-inst" title="生成的旋律会用这个乐器的音色演奏"></select></div>
       <div id="aic-log"></div>
@@ -261,6 +264,9 @@
     syncInst();
 
     fab.onclick = () => { state.open = !state.open; panel.classList.toggle('open', state.open); if (state.open) { syncInst(); document.getElementById('aic-text').focus(); } };
+    // 放大 / 还原
+    const maxBtn = panel.querySelector('#aic-max');
+    maxBtn.onclick = () => { const big = panel.classList.toggle('big'); maxBtn.textContent = big ? '⤡' : '⤢'; maxBtn.title = big ? '还原' : '放大'; };
     const ta = panel.querySelector('#aic-text');
     const send = () => { const v = ta.value.trim(); if (!v) return; ta.value = ''; compose(v); };
     panel.querySelector('#aic-send').onclick = send;
