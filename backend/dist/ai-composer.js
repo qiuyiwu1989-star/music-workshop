@@ -94,14 +94,16 @@
 
   // ---- 调后端生成 ----
   async function compose(intent) {
-    const instId = currentInstId();
+    const sel = document.getElementById('aic-inst');
+    const instId = (sel && sel.value) || currentInstId();     // 用面板选中的音色（默认跟随当前乐器）
+    const inst = instOf(instId);
     addMsg('user', intent);
     const thinkingEl = addMsg('ai', '🎼 正在把你的话变成旋律…');
     state.history.push({ role: 'user', content: intent });
     try {
       const r = await fetch('/api/compose', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ intent, instrumentId: instId, history: state.history }),
+        body: JSON.stringify({ intent, instrumentId: instId, instrumentName: inst ? inst.name : instId, history: state.history }),
       });
       const data = await r.json();
       if (!data.ok) { thinkingEl.textContent = '没成功：' + (data.msg || '再试一次'); return; }
@@ -148,6 +150,8 @@
     #aic-panel.open{display:flex}
     .aic-head{padding:12px 14px;background:linear-gradient(135deg,rgba(120,115,245,.35),rgba(255,110,196,.25));font-weight:700}
     .aic-head small{display:block;font-weight:400;opacity:.8;font-size:12px;margin-top:2px}
+    .aic-inst-row{display:flex;align-items:center;gap:8px;padding:8px 12px;font-size:13px;opacity:.9;border-bottom:1px solid rgba(255,255,255,.08)}
+    .aic-inst-row select{flex:1;background:rgba(0,0,0,.3);color:#fff;border:1px solid rgba(255,255,255,.2);border-radius:8px;padding:5px 8px;font-size:13px;font-family:inherit}
     #aic-log{flex:1;overflow-y:auto;padding:12px;display:flex;flex-direction:column;gap:10px}
     .aic-msg{padding:9px 12px;border-radius:12px;line-height:1.5;white-space:pre-wrap;max-width:90%}
     .aic-user{align-self:flex-end;background:linear-gradient(135deg,#7873f5,#8f7bff);color:#fff}
@@ -170,6 +174,7 @@
     panel.innerHTML = `
       <div class="aic-head">🎼 AI 共创 · 说出你想表达的
         <small>你是作者，我只帮你起草。听完可以让我改，满意就放进作曲台署上你的名字。</small></div>
+      <div class="aic-inst-row">🎹 用这个乐器弹 <select id="aic-inst" title="生成的旋律会用这个乐器的音色演奏"></select></div>
       <div id="aic-log"></div>
       <div class="aic-input">
         <textarea id="aic-text" placeholder="例：孤独但慢慢升起希望，像清晨…（回车发送）"></textarea>
@@ -177,7 +182,16 @@
       </div>`;
     document.body.appendChild(panel);
 
-    fab.onclick = () => { state.open = !state.open; panel.classList.toggle('open', state.open); if (state.open) document.getElementById('aic-text').focus(); };
+    // 音色下拉：只列旋律类乐器（排除鼓/氛围），生成的旋律用选中乐器发声
+    const selEl = panel.querySelector('#aic-inst');
+    if (typeof INSTRUMENTS !== 'undefined') {
+      INSTRUMENTS.filter(i => i.type !== 'drums' && i.type !== 'ambient')
+        .forEach(i => { const o = document.createElement('option'); o.value = i.id; o.textContent = i.name; selEl.appendChild(o); });
+    }
+    const syncInst = () => { const id = currentInstId(); if (selEl.querySelector(`option[value="${id}"]`)) selEl.value = id; };
+    syncInst();
+
+    fab.onclick = () => { state.open = !state.open; panel.classList.toggle('open', state.open); if (state.open) { syncInst(); document.getElementById('aic-text').focus(); } };
     const ta = panel.querySelector('#aic-text');
     const send = () => { const v = ta.value.trim(); if (!v) return; ta.value = ''; compose(v); };
     panel.querySelector('#aic-send').onclick = send;

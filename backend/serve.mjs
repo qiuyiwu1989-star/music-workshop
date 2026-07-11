@@ -27,10 +27,16 @@ const TYPES = {
 //  AI 作曲：语义 → 旋律（Medly 音符 JSON）。密钥只在这里用，绝不进客户端。
 // ====================================================================
 const COMPOSE_SYSTEM = `你是儿童音乐共创助教。规则（创造者教育）：孩子是作者，你只出"草稿"供孩子修改，并用一句温暖易懂的话解释你的选择（顺便教一点乐理）。
-把孩子说的情绪/画面变成一小段单声部旋律。只输出一个 JSON 对象，不要任何解释文字、不要 markdown 代码围栏。
+把孩子说的情绪/画面变成一段有记忆点的单声部旋律。只输出一个 JSON 对象，不要任何解释文字、不要 markdown 代码围栏。
 JSON schema：
-{"bpm":整数(40-140), "scale":"如 C_major / A_minor", "notes":[{"pitch":MIDI整数(60=中央C4), "start":起始拍(浮点), "duration":时值(拍), "velocity":力度1-100}], "why":"一句给孩子的话，说明你为什么这样写"}
-约束：4-8 小节；所有 pitch 必须落在所选 scale 音阶内；单声部（音符不重叠）；节奏要有呼吸（长短、留白）；用音区高低与 velocity 强弱去贴合情绪（如孤独→低、弱、慢；希望→渐高、渐强）。`;
+{"bpm":整数(40-160), "scale":"如 C_major / A_minor", "notes":[{"pitch":MIDI整数(60=中央C4), "start":起始拍(浮点), "duration":时值(拍), "velocity":力度1-100}], "why":"一句给孩子的话"}
+要求：
+- 长度 8-16 小节，音符 20-40 个，要丰富、别太短。
+- 有结构：先出一个小动机(2-4拍)，再重复/模进/变化发展，结尾有收束感；可留 1-2 处呼吸(空拍)。
+- 节奏多样：混用长短音（0.25/0.5/1/2 拍等），不要一直等长。
+- 单声部（音符不重叠）；所有 pitch 落在所选 scale 内。
+- 贴合情绪：用音区高低、velocity 强弱、快慢与走向去表达。
+- 适配乐器：写在这件乐器舒服的音区，贴合它的特点（贝斯偏低、长笛高而流动、拨弦乐器多用跳音/琶音、提琴可长音连奏）。`;
 
 function clampNotes(obj) {
   const notes = (Array.isArray(obj.notes) ? obj.notes : [])
@@ -57,11 +63,12 @@ async function handleCompose(req, res, body) {
 
   const intent = String(payload.intent || '').slice(0, 500);
   const instrumentId = String(payload.instrumentId || 'music_box');
+  const instrumentName = String(payload.instrumentName || instrumentId).slice(0, 40);
   const history = Array.isArray(payload.history) ? payload.history.slice(-6) : [];
 
   const messages = [
     ...history.map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content).slice(0, 1000) })),
-    { role: 'user', content: `乐器: ${instrumentId}。孩子想表达: ${intent}` },
+    { role: 'user', content: `乐器: ${instrumentName}（id:${instrumentId}）。请把旋律写得适合这件乐器的音区与特点。孩子想表达: ${intent}` },
   ];
 
   try {
@@ -70,7 +77,7 @@ async function handleCompose(req, res, body) {
       headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': ENV.MIMO_API_KEY },
       body: JSON.stringify({
         model: ENV.MIMO_MODEL || 'mimo-v2.5',
-        max_tokens: 1600,
+        max_tokens: 3000,
         thinking: { type: 'disabled' },     // 直接出 JSON，快而省
         system: COMPOSE_SYSTEM,
         messages,
