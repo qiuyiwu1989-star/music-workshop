@@ -19,17 +19,46 @@
     return 'music_box';
   }
 
-  // ---- 用所选乐器播放一段音符 ----
-  function stopPlay() { state.playTimers.forEach(clearTimeout); state.playTimers = []; }
+  // ---- 键盘弹奏动效：复用 app 原生高亮（data-semi + .active + 粒子）----
+  const _litEls = new Set();
+  function keyElOf(pitch) {
+    const oct = (typeof currentOctave !== 'undefined') ? currentOctave : 4;
+    const semi = pitch - (oct + 1) * 12;               // 与 app 内 MIDI→键 的换算一致
+    return document.querySelector(`.key-white[data-semi="${semi}"], .key-black[data-semi="${semi}"]`);
+  }
+  function lightKey(pitch, on) {
+    const el = keyElOf(pitch);
+    if (!el) return;                                    // 音在当前可见键盘之外则跳过（声音照常）
+    if (on) {
+      el.classList.add('active'); _litEls.add(el);
+      try { if (typeof burstParticles === 'function') burstParticles(el, 8); } catch (e) {}
+    } else {
+      el.classList.remove('active'); _litEls.delete(el);
+    }
+  }
+  function clearLit() { _litEls.forEach(el => el.classList.remove('active')); _litEls.clear(); }
+
+  // ---- 用所选乐器播放一段音符（声音 + 左侧键盘动效同步）----
+  function stopPlay() { state.playTimers.forEach(clearTimeout); state.playTimers = []; clearLit(); }
   function playMelody(notes, bpm, instId) {
     stopPlay();
     const inst = instOf(instId); if (!inst || typeof AudioEngine === 'undefined') return;
     try { AudioEngine.init(); } catch (e) {}
     const spb = 60 / (bpm || 90);
     notes.forEach(n => {
-      state.playTimers.push(setTimeout(() => { try { AudioEngine[inst.play](n.pitch); } catch (e) {} }, n.start * spb * 1000));
+      const onMs = n.start * spb * 1000;
+      const offMs = (n.start + n.duration) * spb * 1000;
+      state.playTimers.push(setTimeout(() => {
+        try { AudioEngine[inst.play](n.pitch); } catch (e) {}
+        lightKey(n.pitch, true);                        // 按下：亮
+      }, onMs));
       if (inst.type !== 'drums') {
-        state.playTimers.push(setTimeout(() => { try { AudioEngine.release(n.pitch); } catch (e) {} }, (n.start + n.duration) * spb * 1000));
+        state.playTimers.push(setTimeout(() => {
+          try { AudioEngine.release(n.pitch); } catch (e) {}
+          lightKey(n.pitch, false);                     // 抬起：灭
+        }, offMs));
+      } else {
+        state.playTimers.push(setTimeout(() => lightKey(n.pitch, false), onMs + 120));
       }
     });
   }
