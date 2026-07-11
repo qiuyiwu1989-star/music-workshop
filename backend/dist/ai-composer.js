@@ -110,37 +110,62 @@
     } catch (e) { console.warn('[ai-composer] saveToMedly', e); toast('放入作曲台失败'); }
   }
 
-  // ---- 调后端生成 ----
+  // ---- 深度共创：先理解+构思(展示) → 再照构思谱写整首 ----
   async function compose(intent) {
     const sel = document.getElementById('aic-inst');
-    const instId = (sel && sel.value) || currentInstId();     // 用面板选中的音色（默认跟随当前乐器）
+    const instId = (sel && sel.value) || currentInstId();     // 面板选中的音色（默认跟随当前乐器）
     const inst = instOf(instId);
+    const instName = inst ? inst.name : instId;
     addMsg('user', intent);
-    const thinkingEl = addMsg('ai', '🎼 正在为你写一整首…（长一点，请稍等几秒）');
     state.history.push({ role: 'user', content: intent });
+
+    // ① 深度理解 + 作曲构思
+    const thinkEl = addMsg('ai', '🤔 正在深度理解你想表达的…');
+    let plan = null;
+    try {
+      const pr = await fetch('/api/plan', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ intent, instrumentId: instId, instrumentName: instName }),
+      });
+      const pd = await pr.json();
+      if (pd.ok && pd.plan) {
+        plan = pd.plan;
+        thinkEl.innerHTML = '';
+        const u = document.createElement('div');
+        const ub = document.createElement('b'); ub.textContent = '💡 我懂了：';
+        u.append(ub, document.createTextNode(plan.understanding || ''));
+        const brief = document.createElement('div'); brief.className = 'aic-meta';
+        brief.textContent = `🎯 ${[plan.genre, plan.scale, (plan.bpm ? plan.bpm + 'BPM' : ''), plan.structure].filter(Boolean).join(' · ')}`;
+        thinkEl.append(u, brief);
+        if ((plan.devices || []).length) { const d = document.createElement('div'); d.className = 'aic-meta'; d.textContent = '🎛️ 手法：' + plan.devices.join('、'); thinkEl.append(d); }
+        if (plan.plan) { const pl = document.createElement('div'); pl.style.marginTop = '6px'; pl.textContent = plan.plan; thinkEl.append(pl); }
+        state.history.push({ role: 'assistant', content: '构思：' + JSON.stringify({ scale: plan.scale, bpm: plan.bpm, structure: plan.structure }) });
+      } else {
+        thinkEl.textContent = '（先直接谱写）';
+      }
+    } catch (e) { thinkEl.textContent = '（理解阶段跳过，直接谱写）'; }
+
+    // ② 按构思谱写整首
+    const outEl = addMsg('ai', '🎼 按这个构思谱写整首中…（长一点，请稍等几秒）');
     try {
       const r = await fetch('/api/compose', {
         method: 'POST', headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ intent, instrumentId: instId, instrumentName: inst ? inst.name : instId, history: state.history }),
+        body: JSON.stringify({ intent, instrumentId: instId, instrumentName: instName, plan, history: state.history }),
       });
       const data = await r.json();
-      if (!data.ok) { thinkingEl.textContent = '没成功：' + (data.msg || '再试一次'); return; }
+      if (!data.ok) { outEl.textContent = '没成功：' + (data.msg || '再试一次'); return; }
       state.last = data;
       state.history.push({ role: 'assistant', content: JSON.stringify({ scale: data.scale, why: data.why }) });
-      thinkingEl.innerHTML = '';
-      const who = document.createElement('div');
-      who.textContent = data.why || '这是一版草稿，你可以让我改。';
-      const meta = document.createElement('div');
-      meta.className = 'aic-meta';
-      meta.textContent = `${instOf(instId)?.name || instId} · ${data.scale} · ${data.bpm}BPM · ${data.notes.length}个音`;
+      outEl.innerHTML = '';
+      const who = document.createElement('div'); who.textContent = data.why || '这是一版草稿，你可以让我改。';
+      const meta = document.createElement('div'); meta.className = 'aic-meta';
+      meta.textContent = `${instName} · ${data.scale} · ${data.bpm}BPM · ${data.notes.length}个音`;
       const row = document.createElement('div'); row.className = 'aic-actions';
       row.appendChild(btn('▶ 再听一次', () => playMelody(data.notes, data.bpm, instId)));
       row.appendChild(btn('🎹 存进作曲台 · 我来改', () => saveToMedly(data, instId)));
-      thinkingEl.append(who, meta, row);
-      playMelody(data.notes, data.bpm, instId);   // 生成即试听
-    } catch (e) {
-      thinkingEl.textContent = '网络出错了：' + e.message;
-    }
+      outEl.append(who, meta, row);
+      playMelody(data.notes, data.bpm, instId);
+    } catch (e) { outEl.textContent = '网络出错了：' + e.message; }
   }
 
   // ---- UI ----

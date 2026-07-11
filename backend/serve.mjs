@@ -71,6 +71,49 @@ function parseComposition(txt) {
   try { return JSON.parse(head + objs.join(',') + ']}'); } catch (e) { return null; }
 }
 
+// ——— 深度共创 · 第一步：理解意图 + 定作曲构思（像 Deep Research 先想清楚再动手）———
+const PLAN_SYSTEM = `你是音乐共创的策划师。孩子给你一句想法，你要先【深度理解】ta 到底想表达什么（像很懂 ta 的朋友，能说出 ta 没说出口的那层），再定一个作曲构思。只输出一个 JSON：
+{"understanding":"你其实想表达…（温暖、具体，戳中那种感觉）","mood":"情绪词","genre":"风格","scale":"如 C_major / A_minor","bpm":整数(40-160),"structure":"如 引子-主歌-副歌-尾声","devices":["用到的音乐手法，如 上行琶音/切分节奏/长音铺垫/高音点缀"],"plan":"我打算这样写…（一两句，给孩子看，讲人话）"}
+不要任何解释文字、不要 markdown 代码围栏。`;
+
+async function handlePlan(req, res, body) {
+  if (!ENV.MIMO_API_KEY) { res.writeHead(500).end(JSON.stringify({ ok: false, msg: '服务器未配置 MIMO 密钥' })); return; }
+  let payload; try { payload = JSON.parse(body || '{}'); } catch { res.writeHead(400).end(JSON.stringify({ ok: false, msg: 'bad json' })); return; }
+  const intent = String(payload.intent || '').slice(0, 500);
+  const instrumentName = String(payload.instrumentName || payload.instrumentId || '乐器').slice(0, 40);
+  try {
+    const r = await fetch(`${ENV.MIMO_BASE_URL}/v1/messages`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'anthropic-version': '2023-06-01', 'x-api-key': ENV.MIMO_API_KEY },
+      body: JSON.stringify({
+        model: ENV.MIMO_MODEL || 'mimo-v2.5', max_tokens: 1400, thinking: { type: 'disabled' },
+        system: PLAN_SYSTEM,
+        messages: [{ role: 'user', content: `乐器: ${instrumentName}。孩子想表达: ${intent}` }],
+      }),
+    });
+    const data = await r.json();
+    if (data.type === 'error') { res.writeHead(502).end(JSON.stringify({ ok: false, msg: data.error?.message || 'MIMO error' })); return; }
+    const txt = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('');
+    const m = txt.match(/\{[\s\S]*\}/);
+    if (!m) { res.writeHead(502).end(JSON.stringify({ ok: false, msg: 'AI 未返回构思' })); return; }
+    const p = JSON.parse(m[0]);
+    const plan = {
+      understanding: String(p.understanding || '').slice(0, 300),
+      mood: String(p.mood || '').slice(0, 40),
+      genre: String(p.genre || '').slice(0, 60),
+      scale: typeof p.scale === 'string' ? p.scale : 'C_major',
+      bpm: Math.max(40, Math.min(160, Math.round(+p.bpm || 90))),
+      structure: String(p.structure || '').slice(0, 80),
+      devices: Array.isArray(p.devices) ? p.devices.slice(0, 6).map(d => String(d).slice(0, 40)) : [],
+      plan: String(p.plan || '').slice(0, 300),
+    };
+    res.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    res.end(JSON.stringify({ ok: true, plan, usage: data.usage }));
+  } catch (e) {
+    res.writeHead(502).end(JSON.stringify({ ok: false, msg: '调用 MIMO 失败: ' + e.message }));
+  }
+}
+
 async function handleCompose(req, res, body) {
   if (!ENV.MIMO_API_KEY) { res.writeHead(500).end(JSON.stringify({ ok: false, msg: '服务器未配置 MIMO 密钥' })); return; }
   let payload;
@@ -81,9 +124,16 @@ async function handleCompose(req, res, body) {
   const instrumentName = String(payload.instrumentName || instrumentId).slice(0, 40);
   const history = Array.isArray(payload.history) ? payload.history.slice(-6) : [];
 
+  // 若前面已做了"深度理解+构思"，把构思带进来，让谱写严格照构思走
+  const plan = payload.plan && typeof payload.plan === 'object' ? payload.plan : null;
+  let planLine = '';
+  if (plan) {
+    planLine = `\n已定好的构思（请严格遵循）：调式 ${plan.scale || ''}、速度 ${plan.bpm || ''}BPM、风格 ${plan.genre || ''}、结构 ${plan.structure || ''}、手法 ${(plan.devices || []).join('、')}。请用这个调式与速度，按这个结构与手法把它写成一整首长曲。`;
+  }
+
   const messages = [
     ...history.map(h => ({ role: h.role === 'assistant' ? 'assistant' : 'user', content: String(h.content).slice(0, 1000) })),
-    { role: 'user', content: `乐器: ${instrumentName}（id:${instrumentId}）。请把旋律写得适合这件乐器的音区与特点。孩子想表达: ${intent}` },
+    { role: 'user', content: `乐器: ${instrumentName}（id:${instrumentId}）。请把旋律写得适合这件乐器的音区与特点。孩子想表达: ${intent}${planLine}` },
   ];
 
   try {
@@ -114,10 +164,11 @@ async function handleCompose(req, res, body) {
 
 // ---- HTTP ----
 http.createServer((req, res) => {
-  if (req.method === 'POST' && req.url === '/api/compose') {
+  if (req.method === 'POST' && (req.url === '/api/compose' || req.url === '/api/plan')) {
+    const handler = req.url === '/api/plan' ? handlePlan : handleCompose;
     let body = '';
     req.on('data', c => { body += c; if (body.length > 1e6) req.destroy(); });
-    req.on('end', () => handleCompose(req, res, body));
+    req.on('end', () => handler(req, res, body));
     return;
   }
   let p = decodeURIComponent(req.url.split('?')[0]);
