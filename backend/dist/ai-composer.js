@@ -244,8 +244,16 @@
       row.appendChild(playB);
       row.appendChild(btn('⬇️ 下载 MIDI', () => downloadMidi(data.notes, data.bpm, intent)));
       row.appendChild(btn('🎹 存进作曲台 · 我来改', () => saveToMedly(data, instId)));
-      outEl.append(who, meta, row);
-      playMelody(data.notes, data.bpm, instId, playB);   // 自动试听，按钮显示“⏹ 停止”
+      // 一键微调：在刚才这版基础上继续改（作者自己迭代）
+      const tweaks = document.createElement('div'); tweaks.className = 'aic-actions';
+      const hint = document.createElement('span'); hint.className = 'aic-meta'; hint.textContent = '想改改？'; tweaks.appendChild(hint);
+      [['➕ 更长', '在刚才这版基础上再长一点、多加段落'],
+       ['😊 更欢快', '在刚才这版基础上改得更欢快、更有活力'],
+       ['😌 更安静', '在刚才这版基础上改得更安静、更舒缓'],
+       ['🔁 换个感觉', '换一种完全不同的感觉重新写一版']
+      ].forEach(([label, txt]) => tweaks.appendChild(btn(label, () => compose(txt))));
+      outEl.append(who, meta, row, tweaks);
+      playMelody(data.notes, data.bpm, instId, playB);   // 自动试听，按钮显示“⏸ 暂停”
     } catch (e) { outEl.textContent = '网络出错了：' + e.message; }
   }
 
