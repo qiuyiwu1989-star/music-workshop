@@ -135,6 +135,49 @@
     } catch (e) { console.warn('[ai-composer] saveToMedly', e); toast('放入作曲台失败'); }
   }
 
+  // ---- 导出 MIDI：把音符 + bpm 编成标准 MIDI 文件（可下载、可导入任何音乐软件）----
+  function _varLen(arr, v) {
+    let buf = v & 0x7F;
+    while ((v >>= 7)) { buf <<= 8; buf |= ((v & 0x7F) | 0x80); }
+    for (;;) { arr.push(buf & 0xFF); if (buf & 0x80) buf >>= 8; else break; }
+  }
+  function notesToMidi(notes, bpm) {
+    const TPQN = 480;
+    const evs = [];
+    (notes || []).forEach(n => {
+      const on = Math.max(0, Math.round(n.start * TPQN));
+      const off = Math.max(on + 1, Math.round((n.start + n.duration) * TPQN));
+      const pitch = Math.max(0, Math.min(127, n.pitch | 0));
+      const vel = Math.max(1, Math.min(127, Math.round((n.velocity || 80) * 1.27)));
+      evs.push({ tick: on, order: 1, bytes: [0x90, pitch, vel] });   // note on
+      evs.push({ tick: off, order: 0, bytes: [0x80, pitch, 0] });    // note off
+    });
+    evs.sort((a, b) => a.tick - b.tick || a.order - b.order);
+    const track = [];
+    const mpqn = Math.round(60000000 / (bpm || 120));
+    _varLen(track, 0); track.push(0xFF, 0x51, 0x03, (mpqn >> 16) & 0xFF, (mpqn >> 8) & 0xFF, mpqn & 0xFF); // tempo
+    let last = 0;
+    evs.forEach(e => { _varLen(track, e.tick - last); e.bytes.forEach(b => track.push(b)); last = e.tick; });
+    _varLen(track, 0); track.push(0xFF, 0x2F, 0x00); // end of track
+    const L = track.length;
+    const head = [0x4D, 0x54, 0x68, 0x64, 0, 0, 0, 6, 0, 0, 0, 1, (TPQN >> 8) & 0xFF, TPQN & 0xFF];
+    const trk = [0x4D, 0x54, 0x72, 0x6B, (L >>> 24) & 0xFF, (L >>> 16) & 0xFF, (L >>> 8) & 0xFF, L & 0xFF];
+    return new Uint8Array([...head, ...trk, ...track]);
+  }
+  function downloadMidi(notes, bpm, name) {
+    try {
+      const bytes = notesToMidi(notes, bpm);
+      const blob = new Blob([bytes], { type: 'audio/midi' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = ((name || '音乐工坊作品').replace(/[\\/:*?"<>|]/g, '').slice(0, 24) || '音乐工坊作品') + '.mid';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 3000);
+      toast('已下载 MIDI · 可导入任何音乐软件 🎼');
+    } catch (e) { console.warn('[ai-composer] downloadMidi', e); toast('下载失败'); }
+  }
+
   // ---- 深度共创：先理解+构思(展示) → 再照构思谱写整首 ----
   async function compose(intent) {
     const sel = document.getElementById('aic-inst');
@@ -188,6 +231,7 @@
       const row = document.createElement('div'); row.className = 'aic-actions';
       const playB = makePlayBtn(data.notes, data.bpm, instId);
       row.appendChild(playB);
+      row.appendChild(btn('⬇️ 下载 MIDI', () => downloadMidi(data.notes, data.bpm, intent)));
       row.appendChild(btn('🎹 存进作曲台 · 我来改', () => saveToMedly(data, instId)));
       outEl.append(who, meta, row);
       playMelody(data.notes, data.bpm, instId, playB);   // 自动试听，按钮显示“⏹ 停止”
