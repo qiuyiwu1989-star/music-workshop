@@ -116,7 +116,7 @@
     const instId = (sel && sel.value) || currentInstId();     // 用面板选中的音色（默认跟随当前乐器）
     const inst = instOf(instId);
     addMsg('user', intent);
-    const thinkingEl = addMsg('ai', '🎼 正在把你的话变成旋律…');
+    const thinkingEl = addMsg('ai', '🎼 正在为你写一整首…（长一点，请稍等几秒）');
     state.history.push({ role: 'user', content: intent });
     try {
       const r = await fetch('/api/compose', {
