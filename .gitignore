@@ -1,0 +1,19 @@
+# --- 密钥 / 绝不上传 ---
+backend/.env
+*.env
+!*.env.example
+
+# --- 系统 / 依赖 ---
+.DS_Store
+node_modules/
+
+# --- 构建产物（可由 CubCopCat.src.html 经 backend/extract-samples.mjs 重新生成）---
+# 只保留手写源文件，忽略生成的大文件（音频 base64、二进制样本、瘦身 HTML）
+backend/dist/*
+!backend/dist/audio-lazyload.js
+!backend/dist/ai-composer.js
+!backend/dist/README.md
+
+# 临时
+/tmp/
+*.log

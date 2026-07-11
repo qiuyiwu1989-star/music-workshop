@@ -1,0 +1,6 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "cubcopcat-dist", "runtimeExecutable": "node", "runtimeArgs": ["backend/serve.mjs"], "port": 8080 }
+  ]
+}
