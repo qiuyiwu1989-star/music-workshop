@@ -155,6 +155,19 @@ function main() {
     : lazyHtml + '\n' + lazyInject;
   fs.writeFileSync(path.join(OUT, 'CubCopCat.lazy.html'), lazyHtml);
 
+  // ---- 复制 XP 主题静态素材（开机/关机图 + 音效）到 dist 根 ----
+  const xpDir = path.join(path.dirname(path.resolve(SRC)), 'assets-xp');
+  let xpCopied = 0;
+  if (fs.existsSync(xpDir)) {
+    for (const f of fs.readdirSync(xpDir)) {
+      fs.copyFileSync(path.join(xpDir, f), path.join(OUT, f));
+      xpCopied++;
+    }
+    console.log(`✓ 复制 XP 素材 ${xpCopied} 个到 dist 根`);
+  } else {
+    console.warn('  (未找到 assets-xp，跳过 XP 素材复制)');
+  }
+
   const srcSize = Buffer.byteLength(html);
   const slimSize = Buffer.byteLength(slimHtml);
   console.log('─'.repeat(56));
